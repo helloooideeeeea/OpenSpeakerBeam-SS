@@ -1,4 +1,4 @@
-# SpeakerBeam-SS: Real-time Target Speaker Extraction with Lightweight Conv-TasNet and State Space Modeling
+# OpenSpeakerBeam-SS: Real-time Target Speaker Extraction with Lightweight Conv-TasNet and State Space Modeling
 
 This is an **ongoing implementation** of [SpeakerBeam-SS](https://arxiv.org/abs/2407.01857), a real-time target speaker extraction model combining lightweight Conv-TasNet and State Space Modeling (S4D). The goal is to achieve efficient and high-performance speaker separation on resource-constrained devices.
 
@@ -78,5 +78,5 @@ TBD (likely MIT or Apache 2.0)
 
 This work is inspired by the original SpeakerBeam-SS paper and the Conv-TasNet framework.
 
-🔹 **Speaker embeddings are generated using [Resemblyzer](https://github.com/resemble-ai/Resemblyzer/).**
+🔹 **Speaker embeddings are generated using ****[Resemblyzer](https://github.com/resemble-ai/Resemblyzer/)****.**
 
