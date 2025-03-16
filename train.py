@@ -6,6 +6,7 @@ import torchaudio
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from model import SpeakerBeamSS
+from tools import get_speaker_embeddings_batch
 
 
 # ---------------------------------------------
@@ -100,9 +101,12 @@ def train(args):
             enrollment = enrollment.to(device)
             target = target.to(device)
 
+            # enrollment 音声からスピーカーエンベディングを取得
+            speaker_embeddings = get_speaker_embeddings_batch(enrollment, target_sr=16000, device=device)
+
             optimizer.zero_grad()
-            # モデルの順伝播: mixture と enrollment を入力し、推定音声を出力
-            output = model(mixture, enrollment)
+            # モデルの順伝播: mixture と speaker_embeddings を入力し、推定音声を出力
+            output = model(mixture, speaker_embeddings)
             # 出力・target の形状: (B, 1, T) → SI-SNRは (B, T) で計算するため squeeze する
             output = output.squeeze(1)
             target = target.squeeze(1)

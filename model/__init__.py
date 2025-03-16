@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from asteroid.masknn.convolutional import Conv1DBlock  # Conv-TasNet style 1-D convolution block
 from model.s4d import S4D  # S4D layer implementation
 from model.adapt_layers import MulAddAdaptLayer  # Multiplicative adaptation (or FiLM) layer
+from tools import get_speaker_embeddings_batch
 
 
 # =====================
@@ -329,19 +330,25 @@ class SpeakerBeamSS(nn.Module):
 # =====================
 if __name__ == "__main__":
     import torchaudio
-    from resemblyzer import VoiceEncoder, preprocess_wav
 
-    waveform, sample_rate = torchaudio.load("../data/20250306170609.wav")
+    # 1つ目の音声をロード
+    waveform1, sample_rate1 = torchaudio.load("../data/20250306170609.wav")
+    if sample_rate1 != 16000:
+        waveform1 = torchaudio.transforms.Resample(orig_freq=sample_rate1, new_freq=16000)(waveform1)
 
-    # Resample if necessary
-    if sample_rate != 16000:
-        waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)
+    # 2つ目の音声をロード
+    waveform2, sample_rate2 = torchaudio.load("../data/20250306170609.wav")  # 別のファイル
+    if sample_rate2 != 16000:
+        waveform2 = torchaudio.transforms.Resample(orig_freq=sample_rate2, new_freq=16000)(waveform2)
 
-    # d-vector output encoder
-    speaker_encoder = VoiceEncoder(device="cpu")
-    # Convert to numpy array and preprocess for d-vector
-    waveform_preprocessed = preprocess_wav(waveform.numpy().squeeze())
-    speaker_embedding = torch.from_numpy(speaker_encoder.embed_speaker([waveform_preprocessed])).unsqueeze(0)
+    # バッチ化（異なる長さの場合は padding が必要）
+    max_length = max(waveform1.shape[1], waveform2.shape[1])
+    waveform1 = torch.nn.functional.pad(waveform1, (0, max_length - waveform1.shape[1]))
+    waveform2 = torch.nn.functional.pad(waveform2, (0, max_length - waveform2.shape[1]))
+
+    # バッチサイズ2の Tensor にする
+    batch_waveform = torch.stack([waveform1, waveform2], dim=0)
+    speaker_embeddings = get_speaker_embeddings_batch(batch_waveform)
 
     batch_size = 2
     input_len = 16000  # 1秒分 @16kHz 32bit float
@@ -349,5 +356,5 @@ if __name__ == "__main__":
 
     model = SpeakerBeamSS()
     with torch.no_grad():
-        out = model(mixture, speaker_embedding)
+        out = model(mixture, speaker_embeddings)
     print("Input:", mixture.shape, "Output:", out.shape)
