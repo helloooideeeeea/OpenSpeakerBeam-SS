@@ -150,6 +150,8 @@ class Separator(nn.Module):
         super().__init__()
         # The internal processing dimension for the separator is 256
         out_channels = 256
+        # Intermediate hidden layer channels
+        hidden_channels = 512
 
         # Input LayerNorm (applied on (B, T, C))
         self.layer_norm_in = nn.LayerNorm(channels)
@@ -163,7 +165,7 @@ class Separator(nn.Module):
             block = nn.ModuleList([
                 Conv1DBlock(
                     in_chan=out_channels,  # 256 channels
-                    hid_chan=out_channels,  # same as input channels
+                    hid_chan=hidden_channels, # 512 channels
                     skip_out_chan=0,  # no separate skip connection (using residual add instead)
                     kernel_size=3,  # typical kernel size
                     padding=(3 - 1) * (2 ** i),  # padding to maintain causal behavior, scaled by dilation
@@ -184,8 +186,8 @@ class Separator(nn.Module):
         for i in range(num_blocks2):
             block = nn.ModuleList([
                 Conv1DBlock(
-                    in_chan=out_channels,  # 256 channels
-                    hid_chan=out_channels,
+                    in_chan=out_channels,
+                    hid_chan=hidden_channels,
                     skip_out_chan=0,
                     kernel_size=3,
                     padding=(3 - 1) * (2 ** i),
@@ -342,7 +344,7 @@ if __name__ == "__main__":
     speaker_embedding = torch.from_numpy(speaker_encoder.embed_speaker([waveform_preprocessed])).unsqueeze(0)
 
     batch_size = 2
-    input_len = 16000  # 1秒分 @16kHz
+    input_len = 16000  # 1秒分 @16kHz 32bit float
     mixture = torch.randn(batch_size, 1, input_len)
 
     model = SpeakerBeamSS()
