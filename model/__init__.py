@@ -6,7 +6,6 @@ from model.s4d import S4D  # S4D layer implementation
 from model.adapt_layers import MulAddAdaptLayer  # Multiplicative adaptation (or FiLM) layer
 from tools import get_speaker_embeddings_batch
 
-
 # =====================
 #  Encoder
 # =====================
@@ -330,14 +329,14 @@ class SpeakerBeamSS(nn.Module):
 # =====================
 if __name__ == "__main__":
     import torchaudio
-
+    from resemblyzer import VoiceEncoder
     # 1つ目の音声をロード
-    waveform1, sample_rate1 = torchaudio.load("../data/20250306170609.wav")
+    waveform1, sample_rate1 = torchaudio.load("../data/sample/20250306170609.wav")
     if sample_rate1 != 16000:
         waveform1 = torchaudio.transforms.Resample(orig_freq=sample_rate1, new_freq=16000)(waveform1)
 
     # 2つ目の音声をロード
-    waveform2, sample_rate2 = torchaudio.load("../data/20250306170609.wav")  # 別のファイル
+    waveform2, sample_rate2 = torchaudio.load("../data/sample/20250306170609.wav")  # 別のファイル
     if sample_rate2 != 16000:
         waveform2 = torchaudio.transforms.Resample(orig_freq=sample_rate2, new_freq=16000)(waveform2)
 
@@ -348,7 +347,9 @@ if __name__ == "__main__":
 
     # バッチサイズ2の Tensor にする
     batch_waveform = torch.stack([waveform1, waveform2], dim=0)
-    speaker_embeddings = get_speaker_embeddings_batch(batch_waveform)
+
+    speaker_encoder = VoiceEncoder(device="cpu")
+    speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, batch_waveform)
 
     batch_size = 2
     input_len = 16000  # 1秒分 @16kHz 32bit float

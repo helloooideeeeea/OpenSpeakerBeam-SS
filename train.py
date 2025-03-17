@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from model import SpeakerBeamSS
 from tools import get_speaker_embeddings_batch
+from resemblyzer import VoiceEncoder
 
 
 # ---------------------------------------------
@@ -83,6 +84,9 @@ def train(args):
     train_dataset = SpeechDataset(csv_file=args.train_csv)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
+    # 音声埋め込みエンコーダーのインスタンスを作成
+    speaker_encoder = VoiceEncoder(device=device)
+
     # モデルのインスタンス化
     model = SpeakerBeamSS().to(device)
 
@@ -102,7 +106,7 @@ def train(args):
             target = target.to(device)
 
             # enrollment 音声からスピーカーエンベディングを取得
-            speaker_embeddings = get_speaker_embeddings_batch(enrollment, target_sr=16000, device=device)
+            speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, enrollment)
 
             optimizer.zero_grad()
             # モデルの順伝播: mixture と speaker_embeddings を入力し、推定音声を出力

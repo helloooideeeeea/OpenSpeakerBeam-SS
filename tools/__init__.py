@@ -2,22 +2,19 @@ import torch
 from resemblyzer import VoiceEncoder, preprocess_wav
 import numpy as np
 
-def get_speaker_embeddings_batch(enrollment_batch: torch.Tensor, target_sr: int = 16000,
-                                 device: str = "cpu") -> torch.Tensor:
+def get_speaker_embeddings_batch(speaker_encoder: VoiceEncoder, enrollment_batch: torch.Tensor) -> torch.Tensor:
     """
-    バッチ分の enrollment 音声 (shape: [B, 1, T]) から、各サンプルの d-vector エンベディングを取得する関数。
+    enrollment 音声のバッチから、各サンプルの d-vector エンベディングを生成する関数。
 
     Args:
-        enrollment_batch (torch.Tensor): (B, 1, T) の enrollment 音声テンソル
-        target_sr (int): 目標サンプルレート。 enrollment がこのサンプルレートでない場合は変換する
-        device (str): VoiceEncoder の動作デバイス ("cpu" または "cuda")
+        speaker_encoder (VoiceEncoder): d-vector を生成するための音声エンコーダ。
+        enrollment_batch (torch.Tensor): 入力 enrollment 音声テンソル、形状は (B, 1, T)。
+            ※ 各サンプルは、ターゲットサンプルレートであることを仮定。
 
     Returns:
-        torch.Tensor: (B, embedding_dim) のエンベディングテンソル
+        torch.Tensor: 各 enrollment に対応する d-vector エンベディングテンソル、形状は (B, embedding_dim)。
     """
     enroll_list = []
-    # VoiceEncoder のインスタンスを作成
-    speaker_encoder = VoiceEncoder(device=device)
     B = enrollment_batch.size(0)
     for i in range(B):
         waveform = enrollment_batch[i]  # shape: (1, T)
@@ -45,6 +42,7 @@ if __name__ == "__main__":
     batch_waveform = torch.stack([waveform1, waveform2], dim=0)
     print("batch_waveform shape:", batch_waveform.shape)  # (2, 1, 203776)
 
-    speaker_embeddings = get_speaker_embeddings_batch(batch_waveform, target_sr=16000, device="cpu")
+    speaker_encoder = VoiceEncoder(device="cpu")
+    speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, batch_waveform)
     print("speaker_embeddings shape:", speaker_embeddings.shape)
     # (2, 256)
