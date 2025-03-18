@@ -75,30 +75,29 @@ class SpeechDataset(Dataset):
 
 
 # ========================================
-# 3. 検証(Dev)用の評価関数
+# 3. 検証 / テスト時用の評価関数
 # ========================================
+@torch.no_grad()
 def evaluate(model, dataloader, speaker_encoder, device):
+    """DevやTestでSI-SNRを計算する共通関数"""
     model.eval()
     total_loss = 0.0
-    with torch.no_grad():
-        for mixture, enrollment, target in dataloader:
-            mixture = mixture.to(device)
-            enrollment = enrollment.to(device)
-            target = target.to(device)
+    for mixture, enrollment, target in dataloader:
+        mixture = mixture.to(device)
+        enrollment = enrollment.to(device)
+        target = target.to(device)
 
-            # スピーカーエンコーダ
-            speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, enrollment)
+        speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, enrollment)
+        output = model(mixture, speaker_embeddings)
 
-            # 推論
-            output = model(mixture, speaker_embeddings)
-            output = output.squeeze(1)
-            target = target.squeeze(1)
+        output = output.squeeze(1)
+        target = target.squeeze(1)
 
-            loss = si_snr_loss(target, output)
-            total_loss += loss.item()
+        loss = si_snr_loss(target, output)
+        total_loss += loss.item()
 
     avg_loss = total_loss / len(dataloader)
-    model.train()
+    model.train()  # ここで学習モードに戻す
     return avg_loss
 
 
@@ -128,7 +127,10 @@ def train_and_validate(args):
     model = SpeakerBeamSS().to(device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=args.reduce_patience, verbose=True)
+    # ReduceLROnPlateau の設定
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=args.reduce_patience, verbose=True
+    )
 
     # 学習開始
     model.train()
@@ -215,24 +217,64 @@ def train_and_validate(args):
     return model
 
 
+# ========================================
+# 5. テスト時の評価関数
+# ========================================
+def test_model(args):
+    """
+    学習済み(ベスト)モデルを使ってテストデータで評価する関数
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 1) テストデータローダーの用意
+    test_dataset = SpeechDataset(csv_file=args.test_csv)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+    # 2) モデルとスピーカーエンコーダをロード
+    speaker_encoder = VoiceEncoder(device=device)
+    model = SpeakerBeamSS().to(device)
+
+    best_model_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+    if not os.path.exists(best_model_path):
+        raise FileNotFoundError(f"Best model not found at {best_model_path}. Train the model first.")
+
+    # 3) ベストモデルを読み込み
+    model.load_state_dict(torch.load(best_model_path))
+    print(f"Loaded best model from {best_model_path} for testing.")
+
+    # 4) テストデータ上で評価 (SI-SNR)
+    test_loss = evaluate(model, test_loader, speaker_encoder, device)
+    print(f"[Test] Test Loss (SI-SNR): {test_loss:.4f}")
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Train & Validate SpeakerBeam-SS with SI-SNR loss")
-    parser.add_argument("--train_csv", type=str, default="train_metadata.csv")
-    parser.add_argument("--dev_csv", type=str, default="dev_metadata.csv")
+    parser.add_argument("--train_csv", type=str, default="data_csv/train/metadata.csv")
+    parser.add_argument("--dev_csv", type=str, default="data_csv/dev/metadata.csv")
+    parser.add_argument("--test_csv", type=str, default="data_csv/test/metadata.csv")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--log_interval", type=int, default=10)
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
-    # Early Stoppingのパラメータ
+
+    # Early Stopping用パラメータ
     parser.add_argument("--early_stop_patience", type=int, default=120,
                         help="Number of epochs to wait for dev_loss improvement before early stopping.")
-    # Reduce patience
+    # ReduceLROnPlateau用パラメータ
     parser.add_argument("--reduce_patience", type=int, default=20,
                         help="Number of epochs with no improvement after which learning rate will be reduced.")
 
+    parser.add_argument("--mode", type=str, default="train",
+                        help="Specify 'train' or 'test'. If 'test', evaluate on test data.")
+
     args = parser.parse_args()
 
-    trained_model = train_and_validate(args)
+    if args.mode == "train":
+        trained_model = train_and_validate(args)
+    elif args.mode == "test":
+        test_model(args)
+    else:
+        raise ValueError("--mode should be 'train' or 'test'.")

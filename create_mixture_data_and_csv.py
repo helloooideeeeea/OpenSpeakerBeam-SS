@@ -218,7 +218,7 @@ def create_mixture_data_and_csv(args):
 
     # CSV ファイルとして保存
     df = pd.DataFrame(rows)
-    csv_path = os.path.join(args.output_dir, "train_data.csv")
+    csv_path = os.path.join(args.output_dir, "metadata.csv")
     df.to_csv(csv_path, index=False)
     print(f"CSV file saved: {csv_path}")
 
