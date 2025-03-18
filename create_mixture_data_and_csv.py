@@ -104,7 +104,7 @@ def create_mixture_data_and_csv(args):
     """
     # 入力ディレクトリ
     libri_root = os.path.join(args.data_dir, "LibriSpeech", "train-clean")
-    noise_root = os.path.join(args.data_dir, "noise_fullband")
+    noise_root = os.path.join(os.path.dirname(args.data_dir), "noise_fullband")
 
     # 出力ディレクトリ（混合音声、enrollment、target を保存）
     mixture_dir = os.path.join(args.output_dir, "mixtures")
