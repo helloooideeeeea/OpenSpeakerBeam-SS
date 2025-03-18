@@ -27,7 +27,7 @@ This repository is under active development. The **network model implementation 
 Install required dependencies with:
 
 ```sh
-pip install --no-deps -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ## 🚀 Usage
