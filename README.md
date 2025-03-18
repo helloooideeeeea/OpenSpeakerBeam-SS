@@ -27,14 +27,14 @@ This repository is under active development. The **network model implementation 
 Install required dependencies with:
 
 ```sh
-pip install -r requirements.txt
+pip install --no-deps -r requirements.txt
 ```
 
 ## 🚀 Usage
 
 ```python
 import torch
-from model.speakerbeam import SpeakerBeamSS
+from model import SpeakerBeamSS
 
 # Dummy input (1-second speech at 16kHz)
 batch_size = 1
