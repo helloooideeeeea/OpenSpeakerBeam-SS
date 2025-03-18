@@ -103,7 +103,7 @@ def create_mixture_data_and_csv(args):
     生成するファイルは、固定長（10秒）のセグメントとする。
     """
     # 入力ディレクトリ
-    libri_root = os.path.join(args.data_dir, "LibriSpeech", "train-clean")
+    libri_root = os.path.join(args.data_dir, "LibriSpeech", "clean")
     noise_root = os.path.join(os.path.dirname(args.data_dir), "noise_fullband")
 
     # 出力ディレクトリ（混合音声、enrollment、target を保存）
