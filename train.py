@@ -10,9 +10,9 @@ from tools import get_speaker_embeddings_batch
 from resemblyzer import VoiceEncoder
 
 
-# ---------------------------------------------
-# SI-SNR loss 関数の定義
-# ---------------------------------------------
+# ========================================
+# 1. SI-SNR loss 関数
+# ========================================
 def si_snr_loss(s, s_hat, eps=1e-8):
     """
     SI-SNR loss を計算する関数。
@@ -40,9 +40,9 @@ def si_snr_loss(s, s_hat, eps=1e-8):
     return loss
 
 
-# ---------------------------------------------
-# Dataset の定義（CSV に各音声パスが記載されていると仮定）
-# ---------------------------------------------
+# ========================================
+# 2. Dataset の定義
+# ========================================
 class SpeechDataset(Dataset):
     """
     CSVファイルに記載された音声パスから、mixture, enrollment, target のペアを返す Dataset
@@ -74,31 +74,75 @@ class SpeechDataset(Dataset):
         return mixture, enrollment, target
 
 
-# ---------------------------------------------
-# メイン学習ループ
-# ---------------------------------------------
-def train(args):
+# ========================================
+# 3. 検証(Dev)用の評価関数
+# ========================================
+def evaluate(model, dataloader, speaker_encoder, device):
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for mixture, enrollment, target in dataloader:
+            mixture = mixture.to(device)
+            enrollment = enrollment.to(device)
+            target = target.to(device)
+
+            # スピーカーエンコーダ
+            speaker_embeddings = get_speaker_embeddings_batch(speaker_encoder, enrollment)
+
+            # 推論
+            output = model(mixture, speaker_embeddings)
+            output = output.squeeze(1)
+            target = target.squeeze(1)
+
+            loss = si_snr_loss(target, output)
+            total_loss += loss.item()
+
+    avg_loss = total_loss / len(dataloader)
+    model.train()
+    return avg_loss
+
+
+# ========================================
+# 4. メイン学習関数
+# ========================================
+def train_and_validate(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Dataset, DataLoader の準備
+    # ---------------------------
+    # (A) DataLoader の準備
+    # ---------------------------
+    # Trainデータ
     train_dataset = SpeechDataset(csv_file=args.train_csv)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
-    # 音声埋め込みエンコーダーのインスタンスを作成
+    # Devデータ（ハイパーパラメータ調整・性能検証用）
+    dev_dataset = SpeechDataset(csv_file=args.dev_csv)
+    dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+    # 音声埋め込みエンコーダー
     speaker_encoder = VoiceEncoder(device=device)
 
-    # モデルのインスタンス化
+    # ---------------------------
+    # (B) モデルやオプティマイザの定義
+    # ---------------------------
     model = SpeakerBeamSS().to(device)
-
-    # オプティマイザの設定
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5, verbose=True)
 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=args.reduce_patience, verbose=True)
+
+    # 学習開始
     model.train()
     global_step = 0
 
+    best_dev_loss = float("inf")  # Devの最小損失を追跡
+    patience_count = 0            # Early Stopping用カウンタ
+
     for epoch in range(args.num_epochs):
         epoch_loss = 0.0
+
+        # ---------------------------
+        # (C) Trainエポック
+        # ---------------------------
         for batch_idx, (mixture, enrollment, target) in enumerate(train_loader):
             # mixture, enrollment, target は形状が (B, 1, T)
             mixture = mixture.to(device)
@@ -123,37 +167,72 @@ def train(args):
             global_step += 1
 
             if batch_idx % args.log_interval == 0:
-                print(
-                    f"Epoch [{epoch + 1}/{args.num_epochs}] Step [{batch_idx}/{len(train_loader)}] Loss: {loss.item():.4f}")
+                print(f"[Train] Epoch {epoch+1}/{args.num_epochs}, "
+                      f"Step {batch_idx}/{len(train_loader)}, Loss: {loss.item():.4f}")
 
-        avg_loss = epoch_loss / len(train_loader)
-        print(f"Epoch [{epoch + 1}/{args.num_epochs}] Average Loss: {avg_loss:.4f}")
+        avg_train_loss = epoch_loss / len(train_loader)
 
-        # scheduler に平均損失を渡して学習率を更新
-        scheduler.step(avg_loss)
+        # ---------------------------
+        # (D) Devエポック (検証)
+        # ---------------------------
+        dev_loss = evaluate(model, dev_loader, speaker_encoder, device)
+        print(f"[Dev]   Epoch {epoch+1}/{args.num_epochs}, Dev Loss: {dev_loss:.4f}")
 
-        # 定期的にチェックポイントを保存
-        if (epoch + 1) % args.save_interval == 0:
-            ckpt_path = os.path.join(args.checkpoint_dir, f"model_epoch{epoch + 1}.pth")
+        # スケジューラにDev損失を渡して学習率を調整（ReduceLROnPlateauなど）
+        scheduler.step(dev_loss)
+
+        # ---------------------------
+        # (E) ベストモデルの更新 & 早期停止判定
+        # ---------------------------
+        if dev_loss < best_dev_loss:
+            best_dev_loss = dev_loss
+            patience_count = 0
+
+            # ベストモデルを保存（Dev損失が改善したとき）
+            ckpt_path = os.path.join(args.checkpoint_dir, "best_model.pth")
             os.makedirs(args.checkpoint_dir, exist_ok=True)
             torch.save(model.state_dict(), ckpt_path)
-            print(f"Checkpoint saved: {ckpt_path}")
+            print(f"=> Best model updated! Dev Loss = {dev_loss:.4f}")
+        else:
+            # 改善しなかった場合
+            patience_count += 1
+            if patience_count >= args.early_stop_patience:
+                print("Early stopping triggered.")
+                break
+
+        print(f"[Train] Epoch {epoch+1} finished! Average Train Loss: {avg_train_loss:.4f}\n")
+
+    # ---------------------------
+    # 学習終了後、最終的にベストモデルをロードしておく
+    # ---------------------------
+    best_model_path = os.path.join(args.checkpoint_dir, "best_model.pth")
+    if os.path.exists(best_model_path):
+        model.load_state_dict(torch.load(best_model_path))
+        print(f"Loaded best model from {best_model_path}")
+    else:
+        print("No best model found (no improvement on Dev set).")
+
+    return model
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Train SpeakerBeam-SS with SI-SNR loss")
-    parser.add_argument("--train_csv", type=str, default="train_metadata.csv",
-                        help="Path to CSV file containing training data paths")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
-    parser.add_argument("--num_epochs", type=int, default=50, help="Number of training epochs")
-    parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate")
-    parser.add_argument("--log_interval", type=int, default=10, help="Logging interval")
-    parser.add_argument("--save_interval", type=int, default=5, help="Checkpoint save interval (epochs)")
-    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save model checkpoints")
+    parser = argparse.ArgumentParser(description="Train & Validate SpeakerBeam-SS with SI-SNR loss")
+    parser.add_argument("--train_csv", type=str, default="train_metadata.csv")
+    parser.add_argument("--dev_csv", type=str, default="dev_metadata.csv")
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--num_epochs", type=int, default=200)
+    parser.add_argument("--lr", type=float, default=5e-4)
+    parser.add_argument("--log_interval", type=int, default=10)
+    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints")
+    # Early Stoppingのパラメータ
+    parser.add_argument("--early_stop_patience", type=int, default=120,
+                        help="Number of epochs to wait for dev_loss improvement before early stopping.")
+    # Reduce patience
+    parser.add_argument("--reduce_patience", type=int, default=20,
+                        help="Number of epochs with no improvement after which learning rate will be reduced.")
+
     args = parser.parse_args()
 
-    train(args)
-
-
+    trained_model = train_and_validate(args)
