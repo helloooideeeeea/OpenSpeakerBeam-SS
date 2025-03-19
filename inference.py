@@ -68,6 +68,7 @@ def main():
 
     # ----- 6. 推論結果を wav として保存 -----
     enhanced = enhanced.cpu()
+    enhanced = enhanced.squeeze(0)
     torchaudio.save(args.output, enhanced, args.sample_rate)
     print(f"Inference complete. Output saved to {args.output}")
 
