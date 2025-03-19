@@ -24,7 +24,8 @@ def fix_length(waveform: torch.Tensor, target_length: int = 7*16000) -> torch.Te
     else:
         return waveform
 
-enrollment_transform = lambda x: fix_length(x, target_length=7 * 16000)
+def enrollment_fix_length(waveform: torch.Tensor) -> torch.Tensor:
+    return fix_length(waveform, target_length=7 * 16000)
 
 # ========================================
 # 1. SI-SNR loss 関数
@@ -129,11 +130,11 @@ def train_and_validate(args):
     # (A) DataLoader の準備
     # ---------------------------
     # Trainデータ
-    train_dataset = SpeechDataset(csv_file=args.train_csv, enrollment_transform=enrollment_transform)
+    train_dataset = SpeechDataset(csv_file=args.train_csv, enrollment_transform=enrollment_fix_length)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
     # Devデータ（ハイパーパラメータ調整・性能検証用）
-    dev_dataset = SpeechDataset(csv_file=args.dev_csv, enrollment_transform=enrollment_transform)
+    dev_dataset = SpeechDataset(csv_file=args.dev_csv, enrollment_transform=enrollment_fix_length)
     dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     # 音声埋め込みエンコーダー
@@ -245,7 +246,7 @@ def test_model(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1) テストデータローダーの用意
-    test_dataset = SpeechDataset(csv_file=args.test_csv, enrollment_transform=enrollment_transform)
+    test_dataset = SpeechDataset(csv_file=args.test_csv, enrollment_transform=enrollment_fix_length)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     # 2) モデルとスピーカーエンコーダをロード
