@@ -28,11 +28,11 @@ def get_random_segment(waveform: torch.Tensor, seg_length: int = SEGMENT_LENGTH)
 
 
 def assemble_enrollment_audio(silero_vad_model, audio_files: list[str], target_sr: int = 16000,
-                              min_duration_sec: float = 7.0, silence_sec: float = 0.3) -> torch.Tensor:
+                              fixed_duration_sec: float = 7.0, silence_sec: float = 0.3) -> torch.Tensor:
     """
     複数の enrollment 用音声ファイルから、VAD により有効な発話部分のみを抽出し、
-    必要に応じてsilence_sec秒の無音を挟みながら結合する。
-    合計で最低 min_duration_sec 秒以上の音声になるようにする。
+    必要に応じて silence_sec 秒の無音を挟みながら連結する。
+    連結後、最終的に固定長 (fixed_duration_sec 秒) に統一する。
     最終的に連結した音声を (1, samples) の torch.Tensor として返す。
     """
     segments = []
@@ -67,9 +67,10 @@ def assemble_enrollment_audio(silero_vad_model, audio_files: list[str], target_s
                 continue
             segments.append(seg)
             total_duration += (end_sec - start_sec)
-            if total_duration >= min_duration_sec:
+            # 連結後の総長が少なくとも固定長に近い場合は一旦ループを抜ける
+            if total_duration >= fixed_duration_sec:
                 break
-        if total_duration >= min_duration_sec:
+        if total_duration >= fixed_duration_sec:
             break
 
     if len(segments) == 0:
@@ -84,10 +85,13 @@ def assemble_enrollment_audio(silero_vad_model, audio_files: list[str], target_s
     combined = segments[0]
     for seg in segments[1:]:
         combined = np.concatenate([combined, silence_array, seg])
-    desired_length = int(min_duration_sec * target_sr)
+
+    desired_length = int(fixed_duration_sec * target_sr)
     if len(combined) < desired_length:
         pad_length = desired_length - len(combined)
         combined = np.concatenate([combined, np.zeros(pad_length, dtype=np.float32)])
+    elif len(combined) > desired_length:
+        combined = combined[:desired_length]
 
     # combined が numpy.ndarray であることを期待するが、念のためチェック
     if isinstance(combined, torch.Tensor):
