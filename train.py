@@ -9,6 +9,22 @@ from model import SpeakerBeamSS
 from tools import get_speaker_embeddings_batch
 from resemblyzer import VoiceEncoder
 
+def fix_length(waveform: torch.Tensor, target_length: int = 7*16000) -> torch.Tensor:
+    """
+    入力の waveform (shape: (C, T)) を target_length サンプルに固定する関数。
+    T > target_length の場合は先頭 target_length サンプルを抽出し、
+    T < target_length の場合は末尾にゼロパディングする。
+    """
+    current_length = waveform.size(1)
+    if current_length > target_length:
+        return waveform[:, :target_length]
+    elif current_length < target_length:
+        pad_length = target_length - current_length
+        return torch.nn.functional.pad(waveform, (0, pad_length))
+    else:
+        return waveform
+
+enrollment_transform = lambda x: fix_length(x, target_length=7 * 16000)
 
 # ========================================
 # 1. SI-SNR loss 関数
@@ -52,9 +68,10 @@ class SpeechDataset(Dataset):
         - target_path
     """
 
-    def __init__(self, csv_file, transform=None):
+    def __init__(self, csv_file, transform=None, enrollment_transform = None):
         self.metadata = pd.read_csv(csv_file)
         self.transform = transform
+        self.enrollment_transform = enrollment_transform
 
     def __len__(self):
         return len(self.metadata)
@@ -69,8 +86,9 @@ class SpeechDataset(Dataset):
         # 必要に応じて前処理（例: リサンプリング、正規化）を実施
         if self.transform:
             mixture = self.transform(mixture)
-            enrollment = self.transform(enrollment)
             target = self.transform(target)
+        if self.enrollment_transform:
+            enrollment = self.enrollment_transform(enrollment)
         return mixture, enrollment, target
 
 
@@ -111,11 +129,11 @@ def train_and_validate(args):
     # (A) DataLoader の準備
     # ---------------------------
     # Trainデータ
-    train_dataset = SpeechDataset(csv_file=args.train_csv)
+    train_dataset = SpeechDataset(csv_file=args.train_csv, enrollment_transform=enrollment_transform)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
 
     # Devデータ（ハイパーパラメータ調整・性能検証用）
-    dev_dataset = SpeechDataset(csv_file=args.dev_csv)
+    dev_dataset = SpeechDataset(csv_file=args.dev_csv, enrollment_transform=enrollment_transform)
     dev_loader = DataLoader(dev_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     # 音声埋め込みエンコーダー
@@ -227,7 +245,7 @@ def test_model(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 1) テストデータローダーの用意
-    test_dataset = SpeechDataset(csv_file=args.test_csv)
+    test_dataset = SpeechDataset(csv_file=args.test_csv, enrollment_transform=enrollment_transform)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     # 2) モデルとスピーカーエンコーダをロード
