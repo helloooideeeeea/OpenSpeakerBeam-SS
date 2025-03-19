@@ -3,3 +3,4 @@ torchaudio
 asteroid
 resemblyzer
 thop
+silero-vad
