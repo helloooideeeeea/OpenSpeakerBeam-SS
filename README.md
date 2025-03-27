@@ -73,7 +73,7 @@ Training and testing CSV metadata files are automatically downloaded and stored 
 - 🔍 **[Test] Test Loss (SI-SNR): -5.8925**  
   *(Note: current performance is modest; improvements are planned.)*
 
-- Output samples will be saved as:
+- Evaluation result samples:
 
 [enrollment audio 1](data/sample/enrollment_000001.wav)
 [mixture audio 1](data/sample/mixture_000001.wav)
