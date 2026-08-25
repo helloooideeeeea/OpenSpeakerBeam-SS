@@ -101,7 +101,8 @@ FLOPs: 21.60G, Params: 7.64M
 
 ## 📜 License
 
-TBD (likely MIT or Apache 2.0)
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+You are free to use it in commercial and closed-source projects, including mobile apps.
 
 ## 🙌 Acknowledgments
 
